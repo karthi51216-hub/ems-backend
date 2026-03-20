@@ -2,6 +2,7 @@
 
 from rest_framework import serializers
 from .models import Department, Designation, Employee, LeaveRequest
+from django.contrib.auth.models import User
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
@@ -94,6 +95,9 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
 
 
 class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(write_only=True, required=False)
+    password = serializers.CharField(write_only=True, required=False)
+
     class Meta:
         model = Employee
         fields = [
@@ -116,7 +120,9 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
             'date_of_joining',
             'salary',
             'profile_photo',
-            'status'
+            'status',
+            'username',
+            'password',
         ]
 
     def validate_employee_id(self, value):
@@ -128,6 +134,39 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
                 if Employee.objects.filter(employee_id=value).exists():
                     raise serializers.ValidationError("Employee ID already exists")
         return value
+
+    def create(self, validated_data):
+        username = validated_data.pop('username', None)
+        password = validated_data.pop('password', None)
+
+        user = None
+        if username and password:
+            user = User.objects.create_user(
+                username=username,
+                password=password,
+                email=validated_data.get('email', '')
+            )
+
+        employee = Employee.objects.create(user=user, **validated_data)
+        return employee
+
+    def update(self, instance, validated_data):
+        username = validated_data.pop('username', None)
+        password = validated_data.pop('password', None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if instance.user:
+            if username:
+                instance.user.username = username
+            if password:
+                instance.user.set_password(password)
+            instance.user.email = instance.email
+            instance.user.save()
+
+        instance.save()
+        return instance
 
 
 class LeaveRequestSerializer(serializers.ModelSerializer):

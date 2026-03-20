@@ -2,7 +2,7 @@
 
 
 from django.db import models
-
+from django.contrib.auth.models import User
 
 class Department(models.Model):
     name = models.CharField(max_length=100)
@@ -33,6 +33,7 @@ class Employee(models.Model):
         ('terminated', 'Terminated'),
     ]
 
+    user = models.OneToOneField(User, on_delete=models.CASCADE, null=True, blank=True)
     employee_id = models.CharField(max_length=50, unique=True, null=True, blank=True)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)

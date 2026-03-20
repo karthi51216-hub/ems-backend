@@ -5,6 +5,8 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Sum
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import Department, Designation, Employee, LeaveRequest
 from .serializers import (
@@ -82,9 +84,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def me(self, request):
         try:
-            employee = Employee.objects.get(email=request.user.email)
-            serializer = EmployeeDetailSerializer(employee)
-            return Response(serializer.data)
+           employee = Employee.objects.get(user=request.user)
+           serializer = EmployeeDetailSerializer(employee)
+           return Response(serializer.data)
         except Employee.DoesNotExist:
             return Response(
                 {'error': 'Employee profile not found'},
@@ -105,10 +107,43 @@ def dashboard_summary(request):
     return Response(stats)
 
 
+
 class LeaveRequestViewSet(viewsets.ModelViewSet):
-    queryset = LeaveRequest.objects.select_related('employee').all().order_by('-created_at')
     serializer_class = LeaveRequestSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['employee__first_name', 'employee__last_name', 'leave_type', 'status']
     ordering_fields = ['from_date', 'to_date', 'created_at']
+
+    def get_queryset(self):
+        user = self.request.user
+
+        if user.is_staff:
+            return LeaveRequest.objects.select_related('employee').all().order_by('-created_at')
+
+        return LeaveRequest.objects.select_related('employee').filter(employee__user=user).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        try:
+            employee = Employee.objects.get(user=self.request.user)
+            serializer.save(employee=employee)
+        except Employee.DoesNotExist:
+            raise Exception("Employee not found")
+        
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        data = super().validate(attrs)
+
+        user = self.user
+
+        try:
+            employee = Employee.objects.get(user=user)
+            data['role'] = 'employee'
+        except Employee.DoesNotExist:
+            data['role'] = 'admin' if user.is_staff else 'user'
+
+        return data
+
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
